@@ -17,7 +17,8 @@ import {
   Download,
   RefreshCw,
   Wifi,
-  WifiOff
+  WifiOff,
+  Loader2
 } from "lucide-react"
 import {
   Table,
@@ -28,6 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useWebSocket } from "@/hooks/use-websocket"
+import { useToast } from "@/hooks/use-toast"
 
 interface ExecutionLog {
   id: string
@@ -49,107 +51,13 @@ interface Execution {
   logs: ExecutionLog[]
 }
 
-// Mock execution data
-const initialExecutions: Execution[] = [
-  {
-    id: "1",
-    workflowName: "Sincronização de API",
-    workflowId: "1",
-    status: "SUCCESS",
-    startedAt: "2024-01-15T10:30:00Z",
-    completedAt: "2024-01-15T10:30:15Z",
-    duration: "15s",
-    triggerData: '{"source": "webhook", "event": "data.update"}',
-    logs: [
-      {
-        id: "1",
-        level: "INFO",
-        message: "Execução do workflow iniciada",
-        timestamp: "2024-01-15T10:30:00Z"
-      },
-      {
-        id: "2", 
-        level: "INFO",
-        message: "Buscando dados da API externa",
-        timestamp: "2024-01-15T10:30:02Z",
-        stepName: "Buscar Dados da API"
-      },
-      {
-        id: "3",
-        level: "INFO", 
-        message: "150 registros buscados com sucesso",
-        timestamp: "2024-01-15T10:30:08Z",
-        stepName: "Buscar Dados da API"
-      },
-      {
-        id: "4",
-        level: "INFO",
-        message: "Transformação de dados concluída",
-        timestamp: "2024-01-15T10:30:12Z", 
-        stepName: "Transformar Dados"
-      },
-      {
-        id: "5",
-        level: "INFO",
-        message: "150 registros salvos no banco com sucesso",
-        timestamp: "2024-01-15T10:30:15Z",
-        stepName: "Salvar no Banco"
-      }
-    ]
-  },
-  {
-    id: "2",
-    workflowName: "Notificações por Email",
-    workflowId: "2",
-    status: "FAILED",
-    startedAt: "2024-01-15T09:45:00Z", 
-    completedAt: "2024-01-15T09:45:05Z",
-    duration: "5s",
-    triggerData: '{"source": "schedule", "event": "daily.digest"}',
-    logs: [
-      {
-        id: "6",
-        level: "INFO",
-        message: "Execução do workflow iniciada",
-        timestamp: "2024-01-15T09:45:00Z"
-      },
-      {
-        id: "7",
-        level: "ERROR",
-        message: "Falha ao conectar ao servidor SMTP: Timeout de conexão",
-        timestamp: "2024-01-15T09:45:05Z",
-        stepName: "Enviar Email"
-      }
-    ]
-  },
-  {
-    id: "3",
-    workflowName: "Gerador de Relatórios Diários",
-    workflowId: "3",
-    status: "RUNNING",
-    startedAt: "2024-01-15T11:00:00Z",
-    logs: [
-      {
-        id: "8",
-        level: "INFO",
-        message: "Execução do workflow iniciada",
-        timestamp: "2024-01-15T11:00:00Z"
-      },
-      {
-        id: "9",
-        level: "INFO", 
-        message: "Gerando relatório de analytics",
-        timestamp: "2024-01-15T11:00:02Z",
-        stepName: "Gerar Relatório"
-      }
-    ]
-  }
-]
-
 export function ExecutionHistory() {
-  const [executions, setExecutions] = useState<Execution[]>(initialExecutions)
-  const [selectedExecution, setSelectedExecution] = useState<Execution | null>(initialExecutions[0])
+  const [executions, setExecutions] = useState<Execution[]>([])
+  const [selectedExecution, setSelectedExecution] = useState<Execution | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const { toast } = useToast()
 
   const { isConnected, connectionError, subscribeToWorkflow, unsubscribeFromWorkflow } = useWebSocket({
     onMessage: (message) => {
@@ -169,6 +77,55 @@ export function ExecutionHistory() {
       }
     }
   })
+
+  // Fetch executions from API
+  const fetchExecutions = async () => {
+    try {
+      const response = await fetch('/api/executions')
+      if (!response.ok) {
+        throw new Error('Failed to fetch executions')
+      }
+      
+      const data = await response.json()
+      const formattedExecutions = data.executions.map((execution: any) => ({
+        id: execution.id,
+        workflowName: execution.workflow.name,
+        workflowId: execution.workflow.id,
+        status: execution.status,
+        startedAt: execution.startedAt,
+        completedAt: execution.completedAt,
+        duration: execution.completedAt 
+          ? `${Math.round((new Date(execution.completedAt).getTime() - new Date(execution.startedAt).getTime()) / 1000)}s`
+          : undefined,
+        triggerData: execution.triggerData,
+        logs: (execution.logs || []).map((log: any) => ({
+          id: log.id,
+          level: log.level,
+          message: log.message,
+          timestamp: log.createdAt,
+          stepName: log.stepId ? `Step ${log.stepId}` : undefined
+        }))
+      }))
+      
+      setExecutions(formattedExecutions)
+      if (formattedExecutions.length > 0 && !selectedExecution) {
+        setSelectedExecution(formattedExecutions[0])
+      }
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Falha ao carregar execuções",
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchExecutions()
+  }, [])
 
   // Subscribe to all workflow updates
   useEffect(() => {
@@ -243,7 +200,10 @@ export function ExecutionHistory() {
         return {
           ...execution,
           status: data.status,
-          completedAt: data.timestamp
+          completedAt: data.timestamp,
+          duration: data.timestamp 
+            ? `${Math.round((new Date(data.timestamp).getTime() - new Date(execution.startedAt).getTime()) / 1000)}s`
+            : execution.duration
         }
       }
       return execution
@@ -253,7 +213,10 @@ export function ExecutionHistory() {
       setSelectedExecution(prev => prev ? { 
         ...prev, 
         status: data.status,
-        completedAt: data.timestamp
+        completedAt: data.timestamp,
+        duration: data.timestamp 
+          ? `${Math.round((new Date(data.timestamp).getTime() - new Date(prev.startedAt).getTime()) / 1000)}s`
+          : prev.duration
       } : null)
     }
   }
@@ -312,6 +275,15 @@ export function ExecutionHistory() {
     execution.id.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin" />
+        <span className="ml-2">Carregando execuções...</span>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -342,8 +314,20 @@ export function ExecutionHistory() {
             <Download className="w-4 h-4 mr-2" />
             Exportar
           </Button>
-          <Button variant="outline" size="sm">
-            <RefreshCw className="w-4 h-4 mr-2" />
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => {
+              setRefreshing(true)
+              fetchExecutions()
+            }}
+            disabled={refreshing}
+          >
+            {refreshing ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4 mr-2" />
+            )}
             Atualizar
           </Button>
         </div>

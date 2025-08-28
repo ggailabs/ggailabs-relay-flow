@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -18,7 +18,8 @@ import {
   Clock,
   MessageSquare,
   Database,
-  FileText
+  FileText,
+  Loader2
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -26,6 +27,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useToast } from "@/hooks/use-toast"
 
 interface WorkflowBuilderProps {
   workflowId: string
@@ -38,6 +40,25 @@ interface WorkflowStep {
   type: string
   config: any
   order: number
+}
+
+interface Workflow {
+  id: string
+  name: string
+  description?: string
+  isActive: boolean
+  trigger: string
+  config: string
+  authorId: string
+  createdAt: string
+  updatedAt: string
+  author: {
+    id: string
+    email: string
+    name?: string
+  }
+  steps: WorkflowStep[]
+  executions: any[]
 }
 
 const stepTypes = [
@@ -113,42 +134,108 @@ const stepTypes = [
   }
 ]
 
-// Mock workflow data
-const mockWorkflow = {
-  id: "1",
-  name: "Sincronização de API",
-  description: "Sincroniza dados entre API externa e banco de dados local",
-  trigger: "http",
-  status: "active",
-  steps: [
-    {
-      id: "1",
-      name: "Buscar Dados da API",
-      type: "http_request",
-      config: { method: "GET", url: "https://api.example.com/data" },
-      order: 1
-    },
-    {
-      id: "2", 
-      name: "Transformar Dados",
-      type: "transform",
-      config: { mapping: "{}" },
-      order: 2
-    },
-    {
-      id: "3",
-      name: "Salvar no Banco",
-      type: "database",
-      config: { table: "sync_data" },
-      order: 3
-    }
-  ]
-}
-
 export function WorkflowBuilder({ workflowId, onBack }: WorkflowBuilderProps) {
-  const [workflow, setWorkflow] = useState(mockWorkflow)
-  const [steps, setSteps] = useState<WorkflowStep[]>(mockWorkflow.steps)
+  const [workflow, setWorkflow] = useState<Workflow | null>(null)
+  const [steps, setSteps] = useState<WorkflowStep[]>([])
   const [selectedStep, setSelectedStep] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [executing, setExecuting] = useState(false)
+  const { toast } = useToast()
+
+  useEffect(() => {
+    fetchWorkflow()
+  }, [workflowId])
+
+  const fetchWorkflow = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch(`/api/workflows/${workflowId}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch workflow')
+      }
+      
+      const data = await response.json()
+      setWorkflow(data)
+      setSteps(data.steps || [])
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Falha ao carregar workflow",
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const saveWorkflow = async () => {
+    if (!workflow) return
+
+    try {
+      setSaving(true)
+      const response = await fetch(`/api/workflows/${workflowId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: workflow.name,
+          description: workflow.description,
+          trigger: workflow.trigger,
+          config: workflow.config,
+          isActive: workflow.isActive
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to save workflow')
+      }
+
+      toast({
+        title: "Sucesso",
+        description: "Workflow salvo com sucesso"
+      })
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Falha ao salvar workflow",
+        variant: "destructive"
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const executeWorkflow = async () => {
+    try {
+      setExecuting(true)
+      const response = await fetch(`/api/workflows/${workflowId}/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to execute workflow')
+      }
+
+      const result = await response.json()
+      toast({
+        title: "Sucesso",
+        description: `Workflow executado com sucesso. ID: ${result.executionId}`
+      })
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Falha ao executar workflow",
+        variant: "destructive"
+      })
+    } finally {
+      setExecuting(false)
+    }
+  }
 
   const addStep = (type: string) => {
     const stepType = stepTypes.find(st => st.id === type)
@@ -185,6 +272,27 @@ export function WorkflowBuilder({ workflowId, onBack }: WorkflowBuilderProps) {
     return stepType?.color || "bg-gray-500"
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin" />
+        <span className="ml-2">Carregando workflow...</span>
+      </div>
+    )
+  }
+
+  if (!workflow) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <FileText className="w-8 h-8 text-red-500 mx-auto mb-2" />
+          <p className="text-red-500">Workflow não encontrado</p>
+          <Button onClick={onBack} className="mt-2">Voltar</Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -200,15 +308,32 @@ export function WorkflowBuilder({ workflowId, onBack }: WorkflowBuilderProps) {
         </div>
         
         <div className="flex items-center gap-2">
-          <Badge className={workflow.status === "active" ? "bg-green-500 hover:bg-green-600" : ""}>
-            {workflow.status === "active" ? "Ativo" : workflow.status === "inactive" ? "Inativo" : "Rascunho"}
+          <Badge className={workflow.isActive ? "bg-green-500 hover:bg-green-600" : ""}>
+            {workflow.isActive ? "Ativo" : "Inativo"}
           </Badge>
-          <Button variant="outline" className="gap-2">
-            <Save className="w-4 h-4" />
+          <Button 
+            variant="outline" 
+            className="gap-2"
+            onClick={saveWorkflow}
+            disabled={saving}
+          >
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
             Salvar
           </Button>
-          <Button className="gap-2">
-            <Play className="w-4 h-4" />
+          <Button 
+            className="gap-2"
+            onClick={executeWorkflow}
+            disabled={executing || !workflow.isActive}
+          >
+            {executing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )}
             Executar Workflow
           </Button>
         </div>
@@ -408,17 +533,47 @@ export function WorkflowBuilder({ workflowId, onBack }: WorkflowBuilderProps) {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Nome</label>
-                <Input value={workflow.name} />
+                <Input 
+                  value={workflow.name}
+                  onChange={(e) => setWorkflow({...workflow, name: e.target.value})}
+                />
               </div>
               
               <div className="space-y-2">
                 <label className="text-sm font-medium">Descrição</label>
-                <Textarea value={workflow.description} />
+                <Textarea 
+                  value={workflow.description || ""}
+                  onChange={(e) => setWorkflow({...workflow, description: e.target.value})}
+                />
               </div>
               
               <div className="space-y-2">
                 <label className="text-sm font-medium">Tipo de Gatilho</label>
-                <Input value={workflow.trigger === "http" ? "HTTP" : workflow.trigger === "webhook" ? "Webhook" : workflow.trigger === "schedule" ? "Agendado" : "Manual"} disabled className="bg-muted" />
+                <Input 
+                  value={workflow.trigger === "http" ? "HTTP" : workflow.trigger === "webhook" ? "Webhook" : workflow.trigger === "schedule" ? "Agendado" : "Manual"} 
+                  disabled 
+                  className="bg-muted" 
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Status</label>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant={workflow.isActive ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setWorkflow({...workflow, isActive: true})}
+                  >
+                    Ativo
+                  </Button>
+                  <Button
+                    variant={!workflow.isActive ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setWorkflow({...workflow, isActive: false})}
+                  >
+                    Inativo
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

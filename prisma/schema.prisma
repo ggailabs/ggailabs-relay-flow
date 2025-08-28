@@ -19,96 +19,14 @@ model User {
   name      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
-  workflows Workflow[]
 }
 
-model Workflow {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  isActive    Boolean  @default(true)
-  trigger     String   // e.g., "http", "schedule", "webhook"
-  config      String   // JSON configuration for trigger
-  authorId    String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  author      User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  steps       WorkflowStep[]
-  executions  Execution[]
-}
-
-model WorkflowStep {
-  id         String   @id @default(cuid())
-  order      Int
-  name       String
-  type       String   // e.g., "http_request", "email", "database", "condition"
-  config     String   // JSON configuration for the step
-  workflowId String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  
-  workflow   Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  inputs     StepInput[]
-  outputs    StepOutput[]
-}
-
-model StepInput {
-  id     String @id @default(cuid())
-  name   String
-  type   String // e.g., "text", "number", "json", "file"
-  value  String? // Default value or reference to previous step output
-  stepId String
-  
-  step   WorkflowStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
-}
-
-model StepOutput {
-  id     String @id @default(cuid())
-  name   String
-  type   String // e.g., "text", "number", "json", "file"
-  stepId String
-  
-  step   WorkflowStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
-}
-
-model Execution {
-  id          String            @id @default(cuid())
-  status      ExecutionStatus   @default(PENDING)
-  startedAt   DateTime          @default(now())
-  completedAt DateTime?
-  error       String?
-  workflowId  String
-  triggerData String?           // JSON data that triggered the execution
-  
-  workflow    Workflow          @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  logs        ExecutionLog[]
-}
-
-model ExecutionLog {
-  id          String   @id @default(cuid())
-  level       LogLevel @default(INFO)
-  message     String
-  data        String?  // JSON data
-  stepId      String?  // Reference to the step that generated this log
-  executionId String
-  createdAt   DateTime @default(now())
-  
-  execution   Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
-}
-
-enum ExecutionStatus {
-  PENDING
-  RUNNING
-  SUCCESS
-  FAILED
-  CANCELLED
-}
-
-enum LogLevel {
-  DEBUG
-  INFO
-  WARN
-  ERROR
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  published Boolean  @default(false)
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

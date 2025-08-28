@@ -8,16 +8,6 @@ const dev = process.env.NODE_ENV !== 'production';
 const currentPort = 3000;
 const hostname = '0.0.0.0';
 
-// Global object to store socket broadcast functions
-declare global {
-  var socketBroadcasters: {
-    broadcastExecutionUpdate: (update: any) => void;
-    broadcastExecutionLog: (log: any) => void;
-    broadcastExecutionStarted: (workflowId: string, executionId: string) => void;
-    broadcastExecutionCompleted: (workflowId: string, executionId: string, status: string) => void;
-  } | null;
-}
-
 // Custom server with Socket.IO integration
 async function createCustomServer() {
   try {
@@ -50,11 +40,7 @@ async function createCustomServer() {
       }
     });
 
-    // Setup socket and get broadcast functions
-    const broadcasters = setupSocket(io);
-    
-    // Store broadcast functions globally for API routes to access
-    global.socketBroadcasters = broadcasters;
+    setupSocket(io);
 
     // Start the server
     server.listen(currentPort, hostname, () => {

@@ -19,6 +19,54 @@ model User {
   name      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  
+  flows     Flow[]
+}
+
+model Flow {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  authorId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  nodes       Node[]
+  connections Connection[]
+}
+
+model Node {
+  id        String   @id @default(cuid())
+  flowId    String
+  type      String   // 'trigger', 'action', 'condition', 'delay', 'webhook', etc.
+  title     String
+  positionX Int      // X position in the flow canvas
+  positionY Int      // Y position in the flow canvas
+  config    Json     // Node configuration data
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  flow      Flow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  sourceConnections Connection[] @relation("SourceConnections")
+  targetConnections Connection[] @relation("TargetConnections")
+}
+
+model Connection {
+  id         String   @id @default(cuid())
+  flowId     String
+  sourceId   String   // Source node ID
+  targetId   String   // Target node ID
+  config     Json?    // Connection configuration (conditions, etc.)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  flow       Flow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  sourceNode Node     @relation("SourceConnections", fields: [sourceId], references: [id], onDelete: Cascade)
+  targetNode Node     @relation("TargetConnections", fields: [targetId], references: [id], onDelete: Cascade)
+  
+  @@unique([flowId, sourceId, targetId])
 }
 
 model Post {
